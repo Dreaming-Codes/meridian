@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/rynfar/opencode-claude-max-proxy/compare/v1.7.1...v1.7.2) (2026-03-20)
+
+
+### Bug Fixes
+
+* trigger npm publish with token ([c603363](https://github.com/rynfar/opencode-claude-max-proxy/commit/c60336316102e440c22164eb5656a8142cea4cf0))
+
 ## [1.7.1](https://github.com/rynfar/opencode-claude-max-proxy/compare/v1.7.0...v1.7.1) (2026-03-20)
 
 
