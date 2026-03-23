@@ -29,6 +29,11 @@ interface SessionState {
   claudeSessionId: string
   lastAccess: number
   messageCount: number
+  /** Hash of messages[0..messageCount-1] for lineage verification.
+   *  Resume is only safe when the incoming messages are a strict prefix-extension
+   *  of what the SDK session has seen. If the hash doesn't match, history has
+   *  diverged (undo, edit, branch) and we must start a fresh session. */
+  lineageHash: string
 }
 
 const DEFAULT_MAX_SESSIONS = 1000
@@ -122,6 +127,53 @@ function getConversationFingerprint(messages: Array<{ role: string; content: any
   return createHash("sha256").update(text.slice(0, 2000)).digest("hex").slice(0, 16)
 }
 
+/**
+ * Compute a lineage hash of an ordered message array.
+ * Used to verify that the incoming conversation is a strict prefix-extension
+ * of what the SDK session has seen. Covers undo, edit, branch detection.
+ */
+export function computeLineageHash(messages: Array<{ role: string; content: any }>): string {
+  if (!messages || messages.length === 0) return ""
+  const parts = messages.map(m => {
+    const text = typeof m.content === "string"
+      ? m.content
+      : JSON.stringify(m.content)
+    return `${m.role}:${text}`
+  })
+  return createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 32)
+}
+
+/**
+ * Verify that incoming messages are a valid continuation of a cached session.
+ * Returns the session if lineage is intact, undefined if history has diverged.
+ */
+function verifyLineage(
+  cached: SessionState,
+  messages: Array<{ role: string; content: any }>,
+  cacheKey: string,
+  cache: typeof sessionCache | typeof fingerprintCache
+): SessionState | undefined {
+  // No stored lineage (legacy entry or first request) — allow resume
+  if (!cached.lineageHash || cached.messageCount === 0) return cached
+
+  // Messages were truncated — more removed than added (multi-undo)
+  if (messages.length < cached.messageCount) {
+    cache.delete(cacheKey)
+    return undefined
+  }
+
+  // Verify the prefix matches what the SDK session saw
+  const prefix = messages.slice(0, cached.messageCount)
+  const prefixHash = computeLineageHash(prefix)
+  if (prefixHash !== cached.lineageHash) {
+    // History diverged (undo, edit, branch) — invalidate and start fresh
+    cache.delete(cacheKey)
+    return undefined
+  }
+
+  return cached
+}
+
 /** Look up a cached session by header or fingerprint */
 function lookupSession(
   opencodeSessionId: string | undefined,
@@ -131,17 +183,20 @@ function lookupSession(
   // to fingerprint. A different session ID means a different session.
   if (opencodeSessionId) {
     const cached = sessionCache.get(opencodeSessionId)
-    if (cached) return cached
+    if (cached) return verifyLineage(cached, messages, opencodeSessionId, sessionCache)
     // Check shared file store
     const shared = lookupSharedSession(opencodeSessionId)
     if (shared) {
       const state: SessionState = {
         claudeSessionId: shared.claudeSessionId,
         lastAccess: shared.lastUsedAt,
-        messageCount: 0,
+        messageCount: shared.messageCount || 0,
+        lineageHash: shared.lineageHash || "",
       }
-      sessionCache.set(opencodeSessionId, state)
-      return state
+      // Verify lineage before caching
+      const verified = verifyLineage(state, messages, opencodeSessionId, sessionCache)
+      if (verified) sessionCache.set(opencodeSessionId, state)
+      return verified
     }
     return undefined
   }
@@ -150,36 +205,44 @@ function lookupSession(
   const fp = getConversationFingerprint(messages)
   if (fp) {
     const cached = fingerprintCache.get(fp)
-    if (cached) return cached
+    if (cached) return verifyLineage(cached, messages, fp, fingerprintCache)
     const shared = lookupSharedSession(fp)
     if (shared) {
       const state: SessionState = {
         claudeSessionId: shared.claudeSessionId,
         lastAccess: shared.lastUsedAt,
-        messageCount: 0,
+        messageCount: shared.messageCount || 0,
+        lineageHash: shared.lineageHash || "",
       }
-      fingerprintCache.set(fp, state)
-      return state
+      const verified = verifyLineage(state, messages, fp, fingerprintCache)
+      if (verified) fingerprintCache.set(fp, state)
+      return verified
     }
   }
   return undefined
 }
 
-/** Store a session mapping */
+/** Store a session mapping with lineage hash for divergence detection */
 function storeSession(
   opencodeSessionId: string | undefined,
   messages: Array<{ role: string; content: any }>,
   claudeSessionId: string
 ) {
   if (!claudeSessionId) return
-  const state: SessionState = { claudeSessionId, lastAccess: Date.now(), messageCount: messages?.length || 0 }
+  const lineageHash = computeLineageHash(messages)
+  const state: SessionState = {
+    claudeSessionId,
+    lastAccess: Date.now(),
+    messageCount: messages?.length || 0,
+    lineageHash,
+  }
   // In-memory cache
   if (opencodeSessionId) sessionCache.set(opencodeSessionId, state)
   const fp = getConversationFingerprint(messages)
   if (fp) fingerprintCache.set(fp, state)
   // Shared file store (cross-proxy resume)
   const key = opencodeSessionId || fp
-  if (key) storeSharedSession(key, claudeSessionId, state.messageCount)
+  if (key) storeSharedSession(key, claudeSessionId, state.messageCount, lineageHash)
 }
 
 /** Extract only the last user message (for resume — SDK already has history) */
