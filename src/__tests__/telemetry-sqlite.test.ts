@@ -147,6 +147,11 @@ describe("SqliteTelemetryStore", () => {
       contentBlocks: 3,
       textEvents: 10,
       error: null,
+      inputTokens: 1200,
+      outputTokens: 340,
+      cacheReadInputTokens: 900,
+      cacheCreationInputTokens: 120,
+      cacheHitRate: 0.88,
     })
 
     store.record(metric)
@@ -160,6 +165,22 @@ describe("SqliteTelemetryStore", () => {
     expect(retrieved!.lineageType).toBe("continuation")
     expect(retrieved!.messageCount).toBe(5)
     expect(retrieved!.sdkSessionId).toBe("sess-abc")
+    expect(retrieved!.inputTokens).toBe(1200)
+    expect(retrieved!.outputTokens).toBe(340)
+    expect(retrieved!.cacheReadInputTokens).toBe(900)
+    expect(retrieved!.cacheCreationInputTokens).toBe(120)
+    expect(retrieved!.cacheHitRate).toBe(0.88)
+  })
+
+  it("returns the latest successful metric for an SDK session", () => {
+    store.record(makeMetric({ requestId: "older-ok", sdkSessionId: "sdk-1", inputTokens: 100 }))
+    store.record(makeMetric({ requestId: "latest-error", sdkSessionId: "sdk-1", error: "api_error", inputTokens: 200 }))
+    store.record(makeMetric({ requestId: "other-session", sdkSessionId: "sdk-2", inputTokens: 300 }))
+
+    const metric = store.getLastForSession("sdk-1")
+
+    expect(metric?.requestId).toBe("older-ok")
+    expect(metric?.inputTokens).toBe(100)
   })
 
   it("handles interleaved timestamps correctly", () => {

@@ -24,10 +24,16 @@ CREATE TABLE IF NOT EXISTS metrics (
   total_duration_ms    REAL    NOT NULL,
   content_blocks       INTEGER NOT NULL,
   text_events          INTEGER NOT NULL,
-  error                TEXT
+  error                TEXT,
+  input_tokens         INTEGER,
+  output_tokens        INTEGER,
+  cache_read_input_tokens INTEGER,
+  cache_creation_input_tokens INTEGER,
+  cache_hit_rate       REAL
 );
 CREATE INDEX IF NOT EXISTS idx_metrics_ts    ON metrics(timestamp);
 CREATE INDEX IF NOT EXISTS idx_metrics_model ON metrics(model);
+CREATE INDEX IF NOT EXISTS idx_metrics_session_success ON metrics(sdk_session_id, timestamp DESC, id DESC);
 `
 
 const LOGS_SCHEMA = `
@@ -71,12 +77,16 @@ class SqliteTelemetryStore implements ITelemetryStore {
         request_id, timestamp, adapter, model, request_model, mode,
         is_resume, is_passthrough, lineage_type, message_count, sdk_session_id,
         status, queue_wait_ms, proxy_overhead_ms, ttfb_ms,
-        upstream_duration_ms, total_duration_ms, content_blocks, text_events, error
+        upstream_duration_ms, total_duration_ms, content_blocks, text_events, error,
+        input_tokens, output_tokens, cache_read_input_tokens,
+        cache_creation_input_tokens, cache_hit_rate
       ) VALUES (
         @requestId, @timestamp, @adapter, @model, @requestModel, @mode,
         @isResume, @isPassthrough, @lineageType, @messageCount, @sdkSessionId,
         @status, @queueWaitMs, @proxyOverheadMs, @ttfbMs,
-        @upstreamDurationMs, @totalDurationMs, @contentBlocks, @textEvents, @error
+        @upstreamDurationMs, @totalDurationMs, @contentBlocks, @textEvents, @error,
+        @inputTokens, @outputTokens, @cacheReadInputTokens,
+        @cacheCreationInputTokens, @cacheHitRate
       )
     `)
 
@@ -106,6 +116,11 @@ class SqliteTelemetryStore implements ITelemetryStore {
         contentBlocks: metric.contentBlocks,
         textEvents: metric.textEvents,
         error: metric.error ?? null,
+        inputTokens: metric.inputTokens ?? null,
+        outputTokens: metric.outputTokens ?? null,
+        cacheReadInputTokens: metric.cacheReadInputTokens ?? null,
+        cacheCreationInputTokens: metric.cacheCreationInputTokens ?? null,
+        cacheHitRate: metric.cacheHitRate ?? null,
       })
     } catch (err) {
       console.error("[telemetry] SQLite write failed, skipping:", err)
@@ -146,6 +161,17 @@ class SqliteTelemetryStore implements ITelemetryStore {
       return rows.map(rowToMetric)
     } catch {
       return []
+    }
+  }
+
+  getLastForSession(sdkSessionId: string): RequestMetric | undefined {
+    try {
+      const row = this.db.prepare(
+        `SELECT * FROM metrics WHERE sdk_session_id = ? AND error IS NULL ORDER BY timestamp DESC, id DESC LIMIT 1`
+      ).get(sdkSessionId) as Record<string, unknown> | undefined
+      return row ? rowToMetric(row) : undefined
+    } catch {
+      return undefined
     }
   }
 
@@ -271,6 +297,11 @@ function rowToMetric(r: Record<string, unknown>): RequestMetric {
     contentBlocks: r.content_blocks as number,
     textEvents: r.text_events as number,
     error: (r.error as string) ?? null,
+    inputTokens: (r.input_tokens as number) ?? undefined,
+    outputTokens: (r.output_tokens as number) ?? undefined,
+    cacheReadInputTokens: (r.cache_read_input_tokens as number) ?? undefined,
+    cacheCreationInputTokens: (r.cache_creation_input_tokens as number) ?? undefined,
+    cacheHitRate: (r.cache_hit_rate as number) ?? undefined,
   }
 }
 
