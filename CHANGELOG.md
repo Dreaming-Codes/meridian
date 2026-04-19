@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.8](https://github.com/rynfar/meridian/compare/meridian-v1.37.7...meridian-v1.37.8) (2026-04-19)
+
+
+### Bug Fixes
+
+* use documented releases_created output from release-please-action ([#398](https://github.com/rynfar/meridian/issues/398)) ([906ed6d](https://github.com/rynfar/meridian/commit/906ed6d8b957577b9adf9728004c989c55d01928))
+
 ## [1.37.7](https://github.com/rynfar/meridian/compare/meridian-v1.37.6...meridian-v1.37.7) (2026-04-19)
 
 
