@@ -77,16 +77,73 @@ in
       description = "Extra environment variables passed to the Meridian service.";
     };
 
-    opencode.pluginPath = lib.mkOption {
-      type = lib.types.str;
-      default = "${pkg}/lib/meridian/plugin/meridian.ts";
-      readOnly = true;
-      description = "Nix store path to the OpenCode plugin file. Use this to reference the plugin in your OpenCode config.";
+    setSessionVariables = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Set ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL as session variables pointing to Meridian.";
+    };
+
+    opencode = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Install the Meridian OpenCode plugin into the OpenCode plugins directory.";
+      };
+
+      claudeMaxHeaders = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Install the claude-max-headers example plugin (session tracking headers).";
+      };
+
+      agentMode = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Install the meridian-agent-mode example plugin (subagent model selection headers).";
+      };
+
+      pluginPath = lib.mkOption {
+        type = lib.types.str;
+        default = "${pkg}/lib/meridian/plugin/meridian.ts";
+        readOnly = true;
+        description = "Nix store path to the OpenCode plugin file.";
+      };
+
+      claudeMaxHeadersPath = lib.mkOption {
+        type = lib.types.str;
+        default = "${pkg}/lib/meridian/examples/opencode-plugin/claude-max-headers.ts";
+        readOnly = true;
+        description = "Nix store path to the claude-max-headers example plugin.";
+      };
+
+      agentModePath = lib.mkOption {
+        type = lib.types.str;
+        default = "${pkg}/lib/meridian/examples/opencode-plugin/meridian-agent-mode.ts";
+        readOnly = true;
+        description = "Nix store path to the meridian-agent-mode example plugin.";
+      };
     };
   };
 
   config = lib.mkIf cfg.enable {
     home.packages = [ pkg ];
+
+    home.sessionVariables = lib.mkIf cfg.setSessionVariables {
+      ANTHROPIC_API_KEY = "x";
+      ANTHROPIC_BASE_URL = "http://${cfg.settings.host}:${toString cfg.settings.port}";
+    };
+
+    xdg.configFile = lib.mkMerge [
+      (lib.mkIf cfg.opencode.enable {
+        "opencode/plugins/meridian.ts".source = cfg.opencode.pluginPath;
+      })
+      (lib.mkIf cfg.opencode.claudeMaxHeaders {
+        "opencode/plugins/claude-max-headers.ts".source = cfg.opencode.claudeMaxHeadersPath;
+      })
+      (lib.mkIf cfg.opencode.agentMode {
+        "opencode/plugins/meridian-agent-mode.ts".source = cfg.opencode.agentModePath;
+      })
+    ];
 
     systemd.user.services.meridian = {
       Unit = {

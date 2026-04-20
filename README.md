@@ -130,13 +130,29 @@ Then in `~/.config/opencode/opencode.json`:
 
 The service starts automatically on login. Manage it with `systemctl --user {start,stop,restart,status} meridian`.
 
-The plugin path is also available as `config.services.meridian.opencode.pluginPath` for use in your OpenCode config:
+**Session variables** -- set `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` globally so any Anthropic-compatible tool points at Meridian:
 
 ```nix
-xdg.configFile."opencode/opencode.json".text = builtins.toJSON {
-  plugin = [ config.services.meridian.opencode.pluginPath ];
+services.meridian = {
+  enable = true;
+  setSessionVariables = true;
 };
 ```
+
+**OpenCode integration** -- install the Meridian plugin into OpenCode's auto-loaded plugin directory:
+
+```nix
+services.meridian = {
+  enable = true;
+  setSessionVariables = true;
+  opencode.enable = true;
+  # Optional example plugins:
+  # opencode.claudeMaxHeaders = true;  # session tracking headers
+  # opencode.agentMode = true;         # subagent model selection
+};
+```
+
+The plugin paths are also available as read-only options (`pluginPath`, `claudeMaxHeadersPath`, `agentModePath`) if you need to reference them manually.
 
 ## Why Meridian?
 

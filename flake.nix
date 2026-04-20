@@ -68,6 +68,7 @@
               cp -r dist $out/lib/meridian/
               cp -r node_modules $out/lib/meridian/
               cp -r plugin $out/lib/meridian/
+              cp -r examples $out/lib/meridian/
               cp package.json $out/lib/meridian/
 
               mkdir -p $out/bin
